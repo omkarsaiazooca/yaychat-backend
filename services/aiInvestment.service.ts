@@ -22,7 +22,7 @@ type MixLeg = { symbol: string; weight: number };
 const binance = new Binance().options({
   APIKEY: process.env.BINANCE__KEY!,
   APISECRET: process.env.BINANCE_SECRET!,
-  useServerTime: true,
+  useServerTime: false,
 });
 
 export class InvestmentService extends ServiceBase<Investment, InvestmentModel> {

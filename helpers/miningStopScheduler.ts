@@ -2,7 +2,7 @@ import Queue1, { Queue } from "bull";
 import { createClient } from "redis";
 
 const REDIS_HOST =
-  process.env.REDIS_HOST || "redis-11678.c289.us-west-1-2.ec2.cloud.redislabs.com";
+  process.env.REDIS_HOST || "127.0.0.1";
 const REDIS_PORT = Number(process.env.REDIS_PORT || 11678);
 const REDIS_PASSWORD =
   process.env.REDIS_PASSWORD;
