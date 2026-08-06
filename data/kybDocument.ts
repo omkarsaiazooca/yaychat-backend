@@ -1,0 +1,29 @@
+import { IDocumentModel, IModel } from "./base";
+
+export enum KybDocumentType {
+  CERTIFICATE_OF_INCORPORATION = "CERTIFICATE_OF_INCORPORATION",
+  SHAREHOLDER_REGISTER = "SHAREHOLDER_REGISTER",
+  DIRECTOR_ID_FRONT = "DIRECTOR_ID_FRONT",
+  DIRECTOR_ID_BACK = "DIRECTOR_ID_BACK",
+  DIRECTOR_SELFIE = "DIRECTOR_SELFIE",
+  UBO_ID_DOCUMENT = "UBO_ID_DOCUMENT",
+  UBO_ID_FRONT = "UBO_ID_FRONT",
+  UBO_ID_BACK = "UBO_ID_BACK",
+  UBO_SELFIE = "UBO_SELFIE",
+  BUSINESS_PROOF_OF_ADDRESS = "BUSINESS_PROOF_OF_ADDRESS",
+  TAX_IDENTIFICATION = "TAX_IDENTIFICATION",
+  COMPANY_BANK_STATEMENT = "COMPANY_BANK_STATEMENT",
+  AUTHORIZED_SIGNATORY_SELFIE = "AUTHORIZED_SIGNATORY_SELFIE",
+}
+
+export interface KybDocument extends IModel, IDocumentModel<KybDocument> {
+  kybApplicationId: string;
+  userId: string;
+  type: KybDocumentType;
+  s3Key: string;
+  mimeType: string;
+  fileSize: number;
+  createdAt: Date;
+}
+
+

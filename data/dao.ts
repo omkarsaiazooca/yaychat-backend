@@ -1,0 +1,34 @@
+export interface DaoProposal {
+  title: string;
+  taskId: string;
+  proposalId: string;
+  description: string;
+  status: string;
+  tags: string[];
+  startDate: Date;
+  endDate: Date;
+  attachments: string[];
+  comments: { user: string; comment: string; date: Date }[];
+  upvotes: number;
+  downvotes: number;
+  upvotedBy: string[];
+  downvotedBy: string[];
+  isActive: boolean;
+  isCompleted: boolean;
+  isRejected: boolean;
+  isDraft: boolean;
+  isArchived: boolean;
+  isApproved: boolean;
+  isClaimed: boolean;
+  isSubmitted: boolean;
+  isVoting: boolean;
+  isTask: boolean;
+  isProposal: boolean;
+  summary: string;
+  createdBy: string;
+  category: string;
+  votingDeadline: Date;
+  roleRequired: string;
+  votes: { user: string; vote: string, date: Date }[];
+  deadline: Date;
+}
