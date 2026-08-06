@@ -18,6 +18,8 @@ exports
 !package-lock.json
 !tsconfig.json
 !railway.json
+!contractData/*.json
+!contractData/**/*.json
 .mocharc.json
 miningCache.ts
 .env
