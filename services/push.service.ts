@@ -1,8 +1,8 @@
-import admin from '../config/firebase.js';
-import { apnProvider } from '../config/apns.js';
+import admin from '../config/firebase';
+import { apnProvider } from '../config/apns';
 import mongoose from 'mongoose';
-import userSchema from '../models/user.js';   // your existing schema
-import logger from '../helpers/logger.js';
+import userSchema from '../models/user';   // your existing schema
+import logger from '../helpers/logger';
 import apn from 'apn';
 
 const User = mongoose.model('User', userSchema);

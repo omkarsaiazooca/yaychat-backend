@@ -27,12 +27,20 @@ export interface SendStablecoinResult {
   error?: string;
 }
 
-const isDev = true;
+const isDev = process.env.NODE_ENV !== "production";
 const DEVNET_RPC = isDev
   ? keys.SOLANA_DEV_RPC_URL?.key
   : keys.SOLANA_MAIN_RPC_URL?.key;
-const connection = new Connection(DEVNET_RPC, "confirmed");
 const currencyService = new CurrencyService();
+
+function getSolanaConnection(): Connection {
+  if (!DEVNET_RPC || !/^https?:\/\//i.test(DEVNET_RPC)) {
+    throw new Error(
+      `Missing or invalid ${isDev ? "SOLANA_DEV_RPC_URL" : "SOLANA_MAIN_RPC_URL"}; expected an http(s) URL`
+    );
+  }
+  return new Connection(DEVNET_RPC, "confirmed");
+}
 
 // UPDATED: Using your specific environment variables
 
@@ -60,6 +68,7 @@ export async function sendStablecoinToUserSolana(
   currency: string
 ): Promise<SendStablecoinResult> {
   try {
+    const connection = getSolanaConnection();
     const companyKeypair = getCompanyKeypair();
 
     // IF AN ETH ADDRESS IS PASSED HERE, IT THROWS THE "Non-base58 character" ERROR

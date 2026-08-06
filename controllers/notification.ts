@@ -1,10 +1,10 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { format } from "fast-csv";
-import userSchema from '../models/user.js';
-import { pushToMany } from '../services/push.service.js';
-import { NotificationService } from '../services/notification.service.js';
-import { NotificationTemplateService } from '../services/notificationTemplate.service.js';
+import userSchema from '../models/user';
+import { pushToMany } from '../services/push.service';
+import { NotificationService } from '../services/notification.service';
+import { NotificationTemplateService } from '../services/notificationTemplate.service';
 const notificationService: NotificationService = new NotificationService()
 const notificationTemplateService: NotificationTemplateService = new NotificationTemplateService()
 const User = mongoose.model('User', userSchema);

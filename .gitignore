@@ -18,6 +18,9 @@ exports
 !package-lock.json
 !tsconfig.json
 !railway.json
+!config/bitcoinyayStripePrices.json
+!config/bitcoinyayPaypalPlans.json
+!config/smartCryptoPaypalPlans.json
 !contractData/*.json
 !contractData/**/*.json
 .mocharc.json
