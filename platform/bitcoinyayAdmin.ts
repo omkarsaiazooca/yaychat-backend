@@ -209,19 +209,20 @@ const CONTRACT_ADDRESS = process.env.BITCOINYAY_CONTRACT_ADDRESS;
 const DECIMALS = Number(process.env.BITCOINYAY_DECIMALS ?? 18);
 const FEE_LIMIT = 100_000_000;
 
-if (!FULL_NODE || !PRIVATE_KEY || !CONTRACT_ADDRESS) {
-  throw new Error("Missing TRON configuration for Bitcoinyay admin operations");
-}
-
-const tronWeb = new TronWeb({
-  fullHost: FULL_NODE,
-  privateKey: PRIVATE_KEY,
-});
-
 let contractInstance: any | null = null;
 
 export async function getBitcoinyayContract() {
+  if (!FULL_NODE || !PRIVATE_KEY || !CONTRACT_ADDRESS) {
+    throw new Error(
+      "Bitcoinyay TRON operations are unavailable: configure TRON_FULL_NODE, TRON_PRIVATE_KEY, and BITCOINYAY_CONTRACT_ADDRESS"
+    );
+  }
+
   if (!contractInstance) {
+    const tronWeb = new TronWeb({
+      fullHost: FULL_NODE,
+      privateKey: PRIVATE_KEY,
+    });
     contractInstance = await tronWeb.contract(bitcoinyayAbi as any, CONTRACT_ADDRESS);
   }
   return contractInstance;
