@@ -5,9 +5,6 @@ const trimBase = (value: string): string => value.replace(/\/+$/, "");
 const EMMM_API_BASE_URL = trimBase(
   process.env.EMMM_API_BASE_URL || "https://test.api.emmm.io"
 );
-const EMMM_API_ORIGIN = String(
-  process.env.EMMM_API_ORIGIN || "https://test.emmm.io"
-).trim();
 const SHOPERPAL_API_BASE_URL = trimBase(
   process.env.SHOPERPAL_API_BASE_URL || "https://test.api.shoperpal.com"
 );
@@ -26,10 +23,7 @@ const fetchSnapshot = async <T>(baseUrl: string, product: "emmm" | "shoperpal", 
 
   const response = await axios.get(`${baseUrl}/api/integrations/yays/snapshot`, {
     params: { email },
-    headers: {
-      "x-yays-key": key,
-      ...(product === "emmm" ? { Origin: EMMM_API_ORIGIN } : {}),
-    },
+    headers: { "x-yays-key": key },
     timeout: 8000,
   });
   return response.data?.data ?? response.data;
