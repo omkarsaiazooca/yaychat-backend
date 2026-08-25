@@ -63,6 +63,7 @@ import {
   getSubscriptionDetails,
 } from "./paypal.wrapper";
 import { createFirstTimeWallets } from "../helpers/createWallet";
+import { phoneQuery, toE164 } from "../helpers/phone";
 import { AffilateService } from "../services/affiliate.service";
 import { getLatestFTTPrice } from "../helpers/getFTTPrice";
 import { getLatestStockPrice } from "../helpers/twelveDataLatestPrice";
@@ -130,8 +131,8 @@ import { format } from "fast-csv";
 const redisClient = createClient({
   password: process.env.REDIS_PASSWORD,
   socket: {
-    host: process.env.REDIS_HOST || "127.0.0.1",
-    port: Number(process.env.REDIS_PORT || 6379),
+    host: "redis-11678.c289.us-west-1-2.ec2.cloud.redislabs.com",
+    port: 11678,
   },
 });
 
@@ -1439,6 +1440,7 @@ export class UserOperations extends BaseAPIOperations {
           lastName: req.body.lastName,
           country: req.body.country,
           phone: req.body.phoneNumber,
+          profilePic: this.pickProfileImageValue(req.body),
           language: selectedLanguage,
         } as User;
         // If a valid referral is provided, activate Free Trial
@@ -3568,7 +3570,6 @@ export class UserOperations extends BaseAPIOperations {
     try {
       let { email, password, username } = req.body;
       email = String(email).toLowerCase();
-      console.log(email, password, username);
       let user: User = {} as User;
       if (
         email !== "" &&
@@ -4212,7 +4213,7 @@ export class UserOperations extends BaseAPIOperations {
     try {
       let { phone, password } = req.body;
       let user = await uservice.findOneSelect(
-        { phone: phone },
+        { phone: phoneQuery(phone, req.body?.countryCode) },
         this.registerFields
       );
       console.log("user", user);
@@ -14777,18 +14778,36 @@ export class UserOperations extends BaseAPIOperations {
 
   async registerUserWithPhone(req: any, res: any) {
     try {
-      const { phone, password, username, referralCode, email } = req.body;
+      const { password, username, referralCode } = req.body;
+      const rawPhone = String(req.body.phone || "").trim();
 
-      if (!phone || !password || !email) {
+      if (!rawPhone || !password) {
         return {
           status: 400,
-          message: "Phone number, email, and password are required",
+          message: "Phone number and password are required",
           data: {},
         };
       }
 
-      // Check if phone already exists
-      const phoneExists = await uservice.findOne({ phone: phone });
+      // Canonicalise before anything derives from the number. The placeholder
+      // account email below is built from it, so normalising afterwards would
+      // let one person register twice — once as `phone_03001234567@…` and once
+      // as `phone_923001234567@…` — each owning a different balance.
+      const phone = toE164(rawPhone, req.body?.countryCode);
+      if (!phone) {
+        return {
+          status: 400,
+          message: "Enter a valid phone number, including the country code.",
+          data: {},
+        };
+      }
+
+      const suppliedEmail = String(req.body.email || "").trim().toLowerCase();
+      const email = suppliedEmail || `phone_${phone.replace(/\D/g, "")}@phone.yays.app`;
+
+      const phoneExists = await uservice.findOne({
+        phone: phoneQuery(phone),
+      });
 
       if (phoneExists) {
         return {
@@ -14832,13 +14851,19 @@ export class UserOperations extends BaseAPIOperations {
       });
       // Create user with phone number and email
       const newUser: User = {
-        email: email.toLowerCase(), // Use the provided email instead of a placeholder
+        // The platform still uses an internal email-shaped account key. Phone-only
+        // users receive a deterministic placeholder and are never asked to provide
+        // an email address during registration.
+        email,
         phone: phone,
         username: username,
+        firstName: req.body.firstName,
+        lastName: req.body.lastName,
+        profilePic: this.pickProfileImageValue(req.body),
         role: UserRoleTypes.Standard,
         authProviders: [{ provider: AuthProviders.Local }],
         verification: {
-          emailVerified: false, // Email needs to be verified
+          emailVerified: false,
           phoneVerified: false, // Phone needs to be verified
         } as UserVerification,
         baseCurrency: Currency.USD,
@@ -14886,31 +14911,30 @@ export class UserOperations extends BaseAPIOperations {
       // Send OTP via SMS service
       await smsService.sendOtp(phone, phoneOTP.toString());
 
-      // Generate email verification code
-      const emailOTP = Math.floor(100000 + Math.random() * 900000);
-      const emailCodeExpiry = new Date();
-      emailCodeExpiry.setMinutes(emailCodeExpiry.getMinutes() + 15);
+      if (suppliedEmail) {
+        const emailOTP = Math.floor(100000 + Math.random() * 900000);
+        const emailCodeExpiry = new Date();
+        emailCodeExpiry.setMinutes(emailCodeExpiry.getMinutes() + 15);
 
-      // Update user with email code
-      await uservice.updatePart(
-        { _id: createUser._id },
-        {
-          $set: {
-            "verification.emailCode": emailOTP.toString(),
-            "verification.emailCodeExpiry": emailCodeExpiry,
-          },
-        }
-      );
+        await uservice.updatePart(
+          { _id: createUser._id },
+          {
+            $set: {
+              "verification.emailCode": emailOTP.toString(),
+              "verification.emailCodeExpiry": emailCodeExpiry,
+            },
+          }
+        );
 
-      // Send email verification code
-      await emailService.sendReviewEmail2(
-        email,
-        "User",
-        emailOTP.toString(),
-        "register",
-        "New Register",
-        "BTCY-MOBLIE-APP"
-      );
+        await emailService.sendReviewEmail2(
+          email,
+          "User",
+          emailOTP.toString(),
+          "register",
+          "New Register",
+          "BTCY-MOBLIE-APP"
+        );
+      }
 
 
       //create a wallet user for login into wallet web
@@ -15107,9 +15131,10 @@ export class UserOperations extends BaseAPIOperations {
 
       return {
         status: 200,
-        message:
-          "Verification codes sent to phone and email, please verify to complete registration",
-        data: { phone, email },
+        message: suppliedEmail
+          ? "Verification codes sent to phone and email, please verify to complete registration"
+          : "Verification code sent to phone, please verify to complete registration",
+        data: { phone, ...(suppliedEmail ? { email } : {}) },
       };
     } catch (err) {
       console.error("Error in phone registration:", err);
@@ -15129,6 +15154,18 @@ export class UserOperations extends BaseAPIOperations {
         return {
           status: 400,
           message: "Phone number is required",
+          data: {},
+        };
+      }
+
+      // Canonicalise before doing anything else. `0300 1234567` and
+      // `+92 300 1234567` are the same person, and a lookup on the raw string
+      // would report a registered number as unknown.
+      const normalizedPhone = toE164(phone, req.body?.countryCode);
+      if (!normalizedPhone) {
+        return {
+          status: 400,
+          message: "Enter a valid phone number, including the country code.",
           data: {},
         };
       }
@@ -15155,8 +15192,11 @@ export class UserOperations extends BaseAPIOperations {
       //   });
       // }
 
-      // Check if user exists
-      const user = await uservice.findOne({ phone: phone });
+      // Matched against every form the number may already be stored in, so
+      // accounts created before normalisation are still found.
+      const user = await uservice.findOne({
+        phone: phoneQuery(phone, req.body?.countryCode),
+      });
 
       // Generate OTP
       const phoneOTP = Math.floor(100000 + Math.random() * 900000);
@@ -15179,14 +15219,18 @@ export class UserOperations extends BaseAPIOperations {
           }
         );
 
-        // Update or create OTP record
-        const otpRecord = await userOtpSerive.findOne({ phone: phone });
+        // Update or create OTP record. Stored against the canonical form so
+        // verification finds it however the user retypes the number.
+        const otpRecord = await userOtpSerive.findOne({
+          phone: phoneQuery(phone, req.body?.countryCode),
+        });
 
         if (otpRecord) {
           await userOtpSerive.updatePart(
-            { phone: phone },
+            { _id: (otpRecord as any)._id },
             {
               $set: {
+                phone: normalizedPhone,
                 phoneCode: encryptedOTP,
                 phoneCodeExpiry: phoneCodeExpiry,
               },
@@ -15194,7 +15238,7 @@ export class UserOperations extends BaseAPIOperations {
           );
         } else {
           await userOtpSerive.create({
-            phone: phone,
+            phone: normalizedPhone,
             phoneCode: encryptedOTP,
             phoneCodeExpiry: phoneCodeExpiry,
             phoneVerified: false,
@@ -15202,16 +15246,26 @@ export class UserOperations extends BaseAPIOperations {
           });
         }
 
-        // Send OTP via SMS service
-        const smsResult = await smsService.sendOtp(phone, phoneOTP.toString());
-
-        // Log OTP for testing purposes (remove in production)
-        console.log(`Phone OTP for ${phone}: ${phoneOTP}`);
+        // Send OTP via SMS service. A send failure has to surface: silently
+        // returning 200 leaves the user waiting for a text that will never
+        // arrive, with no way to tell that from a slow carrier.
+        const smsResult = await smsService.sendOtp(
+          normalizedPhone,
+          phoneOTP.toString()
+        );
+        if (!smsResult) {
+          return {
+            status: 502,
+            message:
+              "We could not send the verification text. Check the number, or try again shortly.",
+            data: {},
+          };
+        }
 
         return {
           status: 200,
           message: "OTP sent to phone",
-          data: { phone },
+          data: { phone: normalizedPhone },
         };
       } else {
         return {
@@ -15242,8 +15296,11 @@ export class UserOperations extends BaseAPIOperations {
         };
       }
 
+      const phoneFilter = phoneQuery(phone, req.body?.countryCode);
+      const normalizedPhone = toE164(phone, req.body?.countryCode);
+
       // Find OTP record
-      const otpRecord = await userOtpSerive.findOne({ phone: phone });
+      const otpRecord = await userOtpSerive.findOne({ phone: phoneFilter });
 
       if (!otpRecord) {
         return {
@@ -15279,33 +15336,40 @@ export class UserOperations extends BaseAPIOperations {
         };
       }
 
-      // Mark phone as verified in OTP record
+      // Mark phone as verified in OTP record, and migrate the row onto the
+      // canonical form so the next lookup is a direct hit.
       await userOtpSerive.updatePart(
-        { phone: phone },
+        { _id: (otpRecord as any)._id },
         {
           $set: {
+            ...(normalizedPhone ? { phone: normalizedPhone } : {}),
             phoneVerified: true,
             phoneVerifiedOn: new Date(),
           },
         }
       );
 
-      // Update user record
+      // Get user for token generation, matching any stored form.
+      const user = await uservice.findOne({ phone: phoneFilter });
+      if (!user) {
+        return {
+          status: 404,
+          message: "Phone number not registered",
+          data: {},
+        };
+      }
+
+      // Update user record, normalising the stored number at the same time.
       await uservice.updatePart(
-        { phone: phone },
+        { _id: (user as any)._id },
         {
           $set: {
+            ...(normalizedPhone ? { phone: normalizedPhone } : {}),
             "verification.phoneVerified": true,
             "verification.phoneVerifiedOn": new Date(),
           },
         }
       );
-
-      // Clear rate limit after successful validation
-      // await redisClient.del(`phone_otp_limit:${phone}`);
-
-      // Get user for token generation
-      const user = await uservice.findOne({ phone: phone });
 
       // Generate auth token
       const tokenResponse = await new JwtAuthUtil().issueToken(user);
@@ -15337,8 +15401,11 @@ export class UserOperations extends BaseAPIOperations {
         };
       }
 
-      // Check if phone exists
-      const user = await uservice.findOne({ phone: phone });
+      // Matched against every stored form, so a member who types the national
+      // form of their own number is not told it is unregistered.
+      const user = await uservice.findOne({
+        phone: phoneQuery(phone, req.body?.countryCode),
+      });
 
       if (!user) {
         return {
@@ -15394,7 +15461,9 @@ export class UserOperations extends BaseAPIOperations {
       }
 
       // Find user by phone
-      const user = await uservice.findOne({ phone: phone });
+      const user = await uservice.findOne({
+        phone: phoneQuery(phone, req.body?.countryCode),
+      });
 
       if (!user || !user.email || user.email.includes("placeholder")) {
         return {

@@ -58,6 +58,15 @@ import { miningRoute } from "./routes/mining.routes";
 import { miningStationRoute } from "./routes/miningstation.routes";
 import { vestingRoute } from "./routes/vesting.routes";
 import { chatRoute } from "./routes/chat.routes";
+import { aiAssistantRouter } from "./routes/aiAssistant.routes";
+import { yaysCommunitiesRouter } from "./routes/yaysCommunities.routes";
+import { startCommunityScheduler } from "./services/communities/scheduler";
+import { yaysNotificationsRouter } from "./routes/yaysNotifications.routes";
+import { yaysTelemetryRouter } from "./routes/yaysTelemetry.routes";
+import { yaysAdminRouter } from "./routes/yaysAdmin.routes";
+import { yaysWalletRouter } from "./routes/yaysWallet.routes";
+import { yaysCallsRouter } from "./routes/yaysCalls.routes";
+import { yaysEcosystemRouter } from "./routes/yaysEcosystem.routes";
 import { ChatSocketService } from "./services/chatWebsocket.service";
 import { aiInvestmentRoute } from "./routes/aiInvestment.routes";
 import { alchemyRoute } from "./routes/alchemy.routes";
@@ -222,6 +231,10 @@ server.headersTimeout = 80_000;
 // Initialize WebSocket server
 ChatSocketService.init(server);
 setupReferralMessageQueueProcessor();
+// Publishes scheduled community announcements (M3). Independent of the Redis
+// leader election, which is currently disabled; the publish itself is guarded
+// by a status-conditional update, so a second process cannot double-send.
+startCommunityScheduler();
 server.listen(process.env.PORT || 5000, () =>
   console.log(`⚡ Server on :${process.env.PORT || 5000}`)
 );
@@ -289,6 +302,30 @@ app.use("/api/v1/vesting", vestingRoute);
 
 //API for chat related
 app.use("/api/v1/chat", chatRoute);
+
+//API for the YaysApp AI assistant, support desk, and AI governance
+app.use("/api/v1/ai", aiAssistantRouter);
+
+//API for YaysApp communities: discovery, membership, announcements, moderation
+app.use("/api/v1/yays/communities", yaysCommunitiesRouter);
+
+//API for YaysApp notifications: device registry, preferences, inbox, deep links
+app.use("/api/v1/yays/notifications", yaysNotificationsRouter);
+
+//API for YaysApp analytics events and crash reports
+app.use("/api/v1/yays/telemetry", yaysTelemetryRouter);
+
+//API for the YaysApp admin portal: metrics, crashes, moderation, broadcasts
+app.use("/api/v1/yays/admin", yaysAdminRouter);
+
+//API for the YaysApp wallet, IndexxPoints rewards, and referrals
+app.use("/api/v1/yays/wallet", yaysWalletRouter);
+
+//API for YaysApp 1:1 calls: capability probe, ICE servers, and call history
+app.use("/api/v1/yays/calls", yaysCallsRouter);
+
+//API for read-only Indexx ecosystem snapshots shown in the YaysApp mini-app hubs
+app.use("/api/v1/yays/ecosystem", yaysEcosystemRouter);
 
 //API for DAI
 app.use("/api/v1/dao", daoRoute);
@@ -369,6 +406,7 @@ import { setupAdminNotificationQueueProcessor } from "./cron_jobs/adminNotificat
 import { setupInexSponsorshipJob } from "./cron_jobs/inexSponsorship.job";
 import { setupEngagementNotificationJob } from "./cron_jobs/engagementNotifications.job";
 import { setupEmailVerificationJob } from "./cron_jobs/emailVerification.job";
+import { setupStaleCallSweepJob } from "./cron_jobs/staleCallSweep.job";
 import { setupGpaySubscriptionRenewalJob } from "./cron_jobs/gpaySubscriptionRenewal.job";
 import { isMiningAdTestEmail } from "./helpers/miningAdTestEmails";
 
@@ -433,6 +471,11 @@ function startSingletonCrons() {
     lockTtlMs: 75_000,
     run: stopMiningAfter24Hours,
   });
+
+  // 1b) Every minute — close out calls whose ring expired with no outcome.
+  // Without this, a worker restart mid-ring leaves the callee permanently
+  // "busy" and unable to receive any further calls.
+  setupStaleCallSweepJob(redisClient, tz);
 
   // 2) Every 5 minutes — P2P trade processing
   scheduleExactlyOnce({

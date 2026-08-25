@@ -25,6 +25,9 @@ chatRouter.post('/messages/reactions/remove', validateAuthHeader, chatController
 chatRouter.get('/counts/unread', chatController.getUnreadSummary);
 chatRouter.post('/messages/:messageId/reply', validateAuthHeader, chatController.replyToMessage);
 
+// Recipient search for YaysApp direct/group chat.
+chatRouter.get('/users/search', chatController.searchUsers);
+
 // Group routes
 chatRouter.post('/groups/referral', chatController.createReferralGroup);
 chatRouter.post('/groups/custom', chatController.createCustomGroup);

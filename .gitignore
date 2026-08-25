@@ -6,6 +6,7 @@ package-lock.json
 /config/.env
 /.env
 test
+/tests/
 stakedCoins.log
 exports
 *.bash

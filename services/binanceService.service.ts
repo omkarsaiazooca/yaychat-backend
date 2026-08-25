@@ -3,7 +3,7 @@ import Binance from "node-binance-api";
 const binance = new Binance().options({
   APIKEY: process.env.BINANCE_KEY!,
   APISECRET: process.env.BINANCE_SECRET!,
-  useServerTime: false,
+  useServerTime: true,
 });
 
 export const buyCrypto = async (symbol: string, amountUSD: number) => {

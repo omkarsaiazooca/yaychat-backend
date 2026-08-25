@@ -23,11 +23,7 @@ export class UserService extends ServiceBase<User, UserModel> {
     userPassowrd: string,
     dataBasePassword?: string
   ) {
-    let compare = await bcrypt.compare(userPassowrd, String(dataBasePassword));
-    console.log("compare", compare);
-    console.log("userPassowrd", userPassowrd);
-    console.log("dataBasePassword", dataBasePassword);
-    return compare;
+    return bcrypt.compare(userPassowrd, String(dataBasePassword));
   };
 
   normalPasswordCompare = async function (

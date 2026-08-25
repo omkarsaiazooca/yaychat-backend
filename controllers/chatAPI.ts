@@ -13,6 +13,11 @@ import { BtcyChatGroupBonusService } from "../services/btcyChatGroupBonus.servic
 import { subscribeTokensToTopic, unsubscribeTokensFromTopic } from "../helpers/notificationHelper";
 import { UserRoleTypes } from "../data/user";
 import { enqueueReferralMessageFanout } from "../services/referralMessageQueue.service";
+import { deliverChatMessage } from "../services/notificationDelivery.service";
+import {
+  directConversationId,
+  groupConversationId,
+} from "../services/notifications/deepLinks";
 
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -87,6 +92,7 @@ export class ChatController {
     this.getReportedUsers = this.getReportedUsers.bind(this);
     this.getGroupUnreadCount = this.getGroupUnreadCount.bind(this);
     this.markGroupRead = this.markGroupRead.bind(this);
+    this.searchUsers = this.searchUsers.bind(this);
     this.getMessages = this.getMessages.bind(this);
     this.getMessagesPaged = this.getMessagesPaged.bind(this);
     this.getLatestMessages = this.getLatestMessages.bind(this);
@@ -161,6 +167,62 @@ export class ChatController {
     } catch (error) {
       console.error("Error generating S3 URL:", error);
       res.status(500).json({ message: "Failed to generate presigned URL" });
+    }
+  }
+
+  async searchUsers(req: Request, res: Response) {
+    try {
+      const requesterEmail = String(req.query.email || "").trim().toLowerCase();
+      const query = String(req.query.q || "").trim();
+      const limitRaw = Number(req.query.limit || 25);
+      const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? limitRaw : 25, 50));
+
+      if (!requesterEmail) {
+        return res.status(400).json({
+          status: 400,
+          data: { message: "email is required" },
+        });
+      }
+
+      const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const matcher = query
+        ? {
+            $or: [
+              { email: { $regex: escaped, $options: "i" } },
+              { username: { $regex: escaped, $options: "i" } },
+              { firstName: { $regex: escaped, $options: "i" } },
+              { lastName: { $regex: escaped, $options: "i" } },
+            ],
+          }
+        : {};
+
+      const users = await userService.findPaginated(
+        limit,
+        { _id: -1 },
+        {
+          ...matcher,
+          email: { $ne: requesterEmail },
+        },
+        {
+          email: 1,
+          username: 1,
+          firstName: 1,
+          lastName: 1,
+          phone: 1,
+          profilePic: 1,
+        }
+      );
+
+      return res.status(200).json({
+        status: 200,
+        data: users,
+      });
+    } catch (error) {
+      console.error("[chat.searchUsers] error", error);
+      return res.status(500).json({
+        status: 500,
+        data: { message: "Failed to search users" },
+      });
     }
   }
 
@@ -276,50 +338,81 @@ export class ChatController {
       }
       ChatSocketService.emitToUser(sender.email, "message:sent", saved);
 
-      if (!receiverBlockedSender) {
+      setImmediate(async () => {
         try {
-          const unreadForReceiverFromSender = await chatService.countDirectMessages(receiver.email, {
-            peer: sender.email,
-            unreadOnly: true,
-          });
+          if (!receiverBlockedSender) {
+            try {
+              const unreadForReceiverFromSender = await chatService.countDirectMessages(receiver.email, {
+                peer: sender.email,
+                unreadOnly: true,
+              });
 
-          ChatSocketService.emitToUser(receiver.email, "counts:direct", {
-            peerEmail: sender.email,
-            unread: unreadForReceiverFromSender,
-          });
-        } catch { }
+              ChatSocketService.emitToUser(receiver.email, "counts:direct", {
+                peerEmail: sender.email,
+                unread: unreadForReceiverFromSender,
+              });
+            } catch (countError) {
+              console.error("[sendMessage] Failed to update direct unread count", countError);
+            }
 
-        // inbox + push notification
-        const preview = cleanMessage?.slice(0, 120) || (attachment.fileType ? `[${attachment.fileType}]` : "[attachment]");
-        const notifRes = await notificationService.sendNotification(receiver, "chat_message", {
-          from: sender.email,
-          preview,
-        });
-        const notificationId = notifRes.notificationId;
+            try {
+              const preview = cleanMessage?.slice(0, 120) || (attachment.fileType ? `[${attachment.fileType}]` : "[attachment]");
 
-        if (notificationId) {
-          await chatService.updatePart({ _id: saved._id }, { $set: { notificationId } });
-          (saved as any).notificationId = notificationId;
+              // M6 delivery: reaches every device the receiver is signed in on,
+              // honours their notification preferences and mutes, and carries the
+              // deep link that opens this conversation on tap.
+              const m6 = await deliverChatMessage({
+                recipientEmail: receiver.email,
+                senderEmail: sender.email,
+                senderName: [sender.firstName, sender.lastName].filter(Boolean).join(" ").trim() || sender.email,
+                preview,
+                conversationId: directConversationId(sender.email),
+                messageId: String((saved as any)?.messageId || (saved as any)?._id || ""),
+              }).catch((error) => {
+                console.error("[sendMessage] M6 delivery failed", error);
+                return null;
+              });
+
+              // The legacy Indexx notification still owns the inbox row and the
+              // `notificationId` stamped on the message. Suppress only its push
+              // when M6 already reached a device, so nobody is notified twice.
+              // `receiver` is a Mongoose document, so build the stand-in
+              // explicitly rather than spreading it.
+              const legacyReceiver =
+                m6 && m6.delivered > 0
+                  ? { _id: (receiver as any)._id, email: receiver.email, fcmToken: null }
+                  : receiver;
+              const notifRes = await notificationService.sendNotification(legacyReceiver, "chat_message", {
+                from: sender.email,
+                preview,
+              });
+              const notificationId = notifRes.notificationId;
+
+              if (notificationId) {
+                await chatService.updatePart({ _id: saved._id }, { $set: { notificationId } });
+              }
+
+              ChatSocketService.emitToUser(receiver.email, "notification:new", {
+                type: "chat_message",
+                title: "New message",
+                body: preview,
+                createdAt: new Date(),
+              });
+            } catch (notificationError) {
+              console.error("[sendMessage] Failed to send notification", notificationError);
+            }
+          }
+
+          if (replySourceMessage) {
+            await chatService.appendReplySummary(
+              { messageId: replySourceMessage.messageId, _id: replySourceMessage._id },
+              this.buildReplySummary(saved)
+            );
+          }
+        } catch (backgroundError) {
+          console.error("[sendMessage] post-save background error", backgroundError);
         }
-        // optional: also emit a bell update for receiver
-        ChatSocketService.emitToUser(receiver.email, "notification:new", {
-          type: "chat_message",
-          title: "New message",
-          body: preview,
-          createdAt: new Date(),
-        });
-      }
-
-      if (replySourceMessage) {
-        try {
-          await chatService.appendReplySummary(
-            { messageId: replySourceMessage.messageId, _id: replySourceMessage._id },
-            this.buildReplySummary(saved)
-          );
-        } catch (err) {
-          console.error("Failed to append reply summary", err);
-        }
-      }
+      });
 
       return res.status(201).json(saved);
     } catch (error) {
@@ -517,6 +610,41 @@ export class ChatController {
                 });
               } catch { }
             }
+
+            // M6 delivery. The legacy path below pushes to an FCM *topic*, which
+            // fans out inside Firebase and so cannot consult a member's mute
+            // list or notification preferences. YaysApp devices are never
+            // subscribed to topics; they are reached here, per member, with the
+            // gates applied and a deep link into the group conversation.
+            (async () => {
+              try {
+                const recipients =
+                  inboxEmails ??
+                  (await chatGroupService.getMemberEmails(roomGroupId)).filter((email: string) => {
+                    const lower = String(email || "").trim().toLowerCase();
+                    return Boolean(lower) && lower !== senderLower;
+                  });
+                const senderName =
+                  [(user as any).firstName, (user as any).lastName].filter(Boolean).join(" ").trim() ||
+                  user.email;
+                const messageId = String(
+                  (savedMessage as any)?.messageId || (savedMessage as any)?._id || ""
+                );
+                for (const recipient of recipients) {
+                  await deliverChatMessage({
+                    recipientEmail: recipient,
+                    senderEmail: user.email,
+                    senderName,
+                    preview,
+                    conversationId: groupConversationId(roomGroupId),
+                    messageId,
+                    groupName: (targetGroup as any)?.name || "Group",
+                  });
+                }
+              } catch (error) {
+                console.error("[sendGroupMessage] M6 delivery failed", error);
+              }
+            })();
 
             notificationService.sendToTopic(
               `group_${roomGroupId}`,
@@ -1526,6 +1654,7 @@ export class ChatController {
     try {
       const { email } = req.params;
       const user = await userService.findOneSelect({ email }, {});
+      if (!user) return res.status(400).json({ message: "Email not registered" });
       const blocked = await this.getDirectBlockedList(user.email);
       const messages = await chatService.getMessagesForUser(user.email, {
         excludeSenderEmails: blocked,
@@ -1569,6 +1698,7 @@ export class ChatController {
       const { email } = req.params;
       const limit = Math.min(20, Math.max(1, Number(req.query.limit || 5)));
       const user = await userService.findOneSelect({ email }, {});
+      if (!user) return res.status(400).json({ message: "Email not registered" });
       const blocked = await this.getDirectBlockedList(user.email);
       const messages = await chatService.getLastMessages(user.email, {
         excludeSenderEmails: blocked,
@@ -1600,7 +1730,7 @@ export class ChatController {
       const { matchedCount, modifiedCount } = email
         ? await chatService.markDirectMessagesAsReadForEmail(messageIds, reader.email)
         : await chatService.markMessagesAsRead(messageIds, userId);
-      const msgs = await chatService.findWithNotifications(messageIds, userId);
+      const msgs = await chatService.findWithNotifications(messageIds, userId, reader.email);
       const notificationIds = msgs
         .filter((m: any) => m.receiverEmail === reader.email && !!m.notificationId)
         .map((m: any) => m.notificationId as string);

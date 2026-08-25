@@ -4,7 +4,7 @@ import { NotificationService } from "./notification.service";
 import { ChatSocketService } from "./chatWebsocket.service";
 
 const REDIS_HOST =
-  process.env.REDIS_HOST || "127.0.0.1";
+  process.env.REDIS_HOST || "redis-11678.c289.us-west-1-2.ec2.cloud.redislabs.com";
 const REDIS_PORT = Number(process.env.REDIS_PORT || 11678);
 const REDIS_PASSWORD =
   process.env.REDIS_PASSWORD;

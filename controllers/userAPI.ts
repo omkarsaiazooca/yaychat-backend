@@ -73,8 +73,8 @@ const whitelistService: WhitelistService = new WhitelistService();
 const redisClient = createClient({
   password: process.env.REDIS_PASSWORD,
   socket: {
-    host: process.env.REDIS_HOST || "127.0.0.1",
-    port: Number(process.env.REDIS_PORT || 6379),
+    host: "redis-11678.c289.us-west-1-2.ec2.cloud.redislabs.com",
+    port: 11678,
   },
 });
 
@@ -400,7 +400,6 @@ export class UserController {
         res.send({ status: 400, data: "Bad Request" });
         return;
       }
-      console.log(req.body);
       const userOps = new UserOperations(req, res);
       let dataResults = await userOps.registerUser(
         req,
@@ -435,7 +434,6 @@ export class UserController {
         res.send({ status: 400, data: "Bad Request" });
         return;
       }
-      console.log(req.body);
       const userOps = new UserOperations(req, res);
       let dataResults = await userOps.registerUserFromApp(
         req,
@@ -475,7 +473,6 @@ export class UserController {
         res.send({ status: 400, data: "Bad Request" });
         return;
       }
-      console.log(req.body);
       const userOps = new UserOperations(req, res);
       let dataResults = await userOps.registerUserFromApp(
         req,
@@ -512,7 +509,6 @@ export class UserController {
         res.send({ status: 400, data: "Bad Request" });
         return;
       }
-      console.log(req.body);
       const userOps = new UserOperations(req, res);
       let dataResults = await userOps.registerUser0(
         req,
@@ -6766,13 +6762,13 @@ export class UserController {
 
   async registerUserWithPhone(req: any, res: any) {
     try {
-      const { phone, password, username, referralCode, email } = req.body;
+      const { phone, password } = req.body;
 
-      if (!phone || !password || !email) {
+      if (!phone || !password) {
         res.statusCode = 400;
         res.send({
           status: 400,
-          message: "Phone number, email, and password are required"
+          message: "Phone number and password are required"
         });
         return;
       }

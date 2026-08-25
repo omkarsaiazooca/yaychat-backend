@@ -7,8 +7,8 @@ import axios from "axios";
 const redisClient = createClient({
     password: keys.RedisKey.key || process.env.REDIS_PASSWORD,
     socket: {
-        host: process.env.REDIS_HOST || "127.0.0.1",
-        port: Number(process.env.REDIS_PORT || 6379),
+        host: "redis-11678.c289.us-west-1-2.ec2.cloud.redislabs.com",
+        port: 11678,
     },
 });
 

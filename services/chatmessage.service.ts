@@ -254,11 +254,20 @@ export class ChatMessageService extends ServiceBase<ChatMessage, ChatMessageMode
         };
     }
 
-    async findWithNotifications(messageIds: string[], readerUserId: string) {
+    async findWithNotifications(messageIds: string[], readerUserId?: string, readerEmail?: string) {
+        const objectIds = messageIds
+            .filter((id) => mongoose.Types.ObjectId.isValid(id))
+            .map((id) => new mongoose.Types.ObjectId(id));
+        const idFilter: any = objectIds.length
+            ? { $or: [{ _id: { $in: objectIds } }, { messageId: { $in: messageIds } }] }
+            : { messageId: { $in: messageIds } };
+        const recipientFilter = readerEmail
+            ? { receiverEmail: String(readerEmail).trim().toLowerCase() }
+            : { userId: { $ne: readerUserId } };
         return this.find(
             {
-                _id: { $in: messageIds },
-                userId: { $ne: readerUserId },                // only messages the reader received
+                ...idFilter,
+                ...recipientFilter,
                 notificationId: { $exists: true, $ne: null }, // only those that have notifications
             }
         );
