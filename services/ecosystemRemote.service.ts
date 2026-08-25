@@ -3,7 +3,7 @@ import axios from "axios";
 const trimBase = (value: string): string => value.replace(/\/+$/, "");
 
 const EMMM_API_BASE_URL = trimBase(
-  process.env.EMMM_API_BASE_URL || "https://test.api.emmm.io"
+  process.env.EMMM_API_BASE_URL || "https://api.emmm.io"
 );
 const SHOPERPAL_API_BASE_URL = trimBase(
   process.env.SHOPERPAL_API_BASE_URL || "https://test.api.shoperpal.com"

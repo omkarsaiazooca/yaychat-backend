@@ -3,7 +3,6 @@ import { UserMiningBalanceService } from "./userMiningBalance.service";
 import { AlchemyPoolService } from "./alchemyPool.service";
 import { MiningStreakService } from "./miningStreak.service";
 import { AdMiningWatchService } from "./adMiningWatch.service";
-import { ShopOrdersService } from "./shop.order.service";
 import { UserService } from "./user.service";
 import { getNuggetEligibilityForEmmm } from "./emmmNuggetEligibility.service";
 import { yaysReferrals, MINING_STATION_REFERRAL_TARGET } from "./yaysReferral.service";
@@ -55,11 +54,7 @@ export interface BtcySnapshot {
 }
 
 export interface ShoperpalSnapshot {
-  buyer: {
-    monthSpend: number | Unavailable;
-    orderCount: number | Unavailable;
-    nuggetBalance: number | Unavailable;
-  };
+  buyer: Record<string, unknown> | null;
   supplier: Record<string, unknown> | null;
 }
 
@@ -77,6 +72,7 @@ export interface EmmmSnapshot {
     reason: string | null;
   } | Unavailable;
   slate: Record<string, unknown> | null;
+  portfolio: Record<string, unknown> | null;
   accuracy: Record<string, unknown> | null;
   ticket: Record<string, unknown> | null;
 }
@@ -84,11 +80,6 @@ export interface EmmmSnapshot {
 const num = (value: unknown): number | null => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-};
-
-const startOfMonth = (): Date => {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 };
 
 const startOfUtcDay = (): Date => {
@@ -119,7 +110,6 @@ export class YaysEcosystemService {
   private pools = new AlchemyPoolService();
   private streaks = new MiningStreakService();
   private adWatch = new AdMiningWatchService();
-  private orders = new ShopOrdersService();
   private users = new UserService();
 
   async btcy(userLower: string): Promise<BtcySnapshot> {
@@ -183,29 +173,10 @@ export class YaysEcosystemService {
   }
 
   async shoperpal(userLower: string): Promise<ShoperpalSnapshot> {
-    const [monthOrders, balance, remote] = await Promise.all([
-      soft("shop orders", () =>
-        this.orders.find({
-          email: userLower,
-          createdAt: { $gte: startOfMonth() },
-        })
-      ),
-      soft("nugget balance", () =>
-        this.balances.findOne({ email: userLower, coinSymbol: BTCY })
-      ),
-      soft("ShoperPal supplier", () => getShoperpalSnapshot(userLower)),
-    ]);
-
-    const rows = Array.isArray(monthOrders) ? monthOrders : null;
+    const remote = await soft("ShoperPal account", () => getShoperpalSnapshot(userLower));
 
     return {
-      buyer: {
-        monthSpend: rows
-          ? rows.reduce((sum: number, order: any) => sum + (num(order?.totalAmount) ?? 0), 0)
-          : null,
-        orderCount: rows ? rows.length : null,
-        nuggetBalance: num((balance as any)?.transferableBalance),
-      },
+      buyer: remote?.buyer ?? null,
       supplier: remote?.supplier ?? null,
     };
   }
@@ -227,6 +198,7 @@ export class YaysEcosystemService {
           }
         : null,
       slate: remote?.slate ?? null,
+      portfolio: remote?.portfolio ?? null,
       accuracy: remote?.accuracy ?? null,
       ticket: remote?.ticket ?? null,
     };
