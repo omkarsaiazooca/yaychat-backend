@@ -43,9 +43,16 @@ export var keys = {
     isEncrypted: true,
   },
   marketingEmail: {
+    transactionalProvider: String(process.env.EMAIL_PROVIDER || "ses"),
+    transactionalFallbackProvider: String(process.env.EMAIL_FALLBACK_PROVIDER || ""),
     awsSesRegion: String(process.env.AWS_SES_REGION || process.env.AWS_REGION || "us-east-1"),
-    awsAccessKeyId: String(process.env.AWS_ACCESS_KEY_ID || ""),
-    awsSecretAccessKey: String(process.env.AWS_SECRET_ACCESS_KEY || ""),
+    awsAccessKeyId: String(
+      process.env.AWS_SES_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || ""
+    ),
+    awsSecretAccessKey: String(
+      process.env.AWS_SES_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || ""
+    ),
+    awsSessionToken: String(process.env.AWS_SESSION_TOKEN || ""),
     awsSesFromEmail: String(
       process.env.AWS_SES_FROM_EMAIL || process.env.MARKETING_EMAIL_FROM || ""
     ),

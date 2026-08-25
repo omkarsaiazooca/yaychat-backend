@@ -657,7 +657,7 @@ export class ChatMessageService extends ServiceBase<ChatMessage, ChatMessageMode
         if (excludeSenders.length) {
             match.email = { $nin: excludeSenders };
         }
-        const rows = await (this as any).aggregate([
+        const rows = await this.findAggregate<{ _id: string; count: number }>([
             { $match: match },
             { $group: { _id: "$email", count: { $sum: 1 } } },
         ]);

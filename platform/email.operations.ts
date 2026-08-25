@@ -6,7 +6,14 @@ const path = require("path");
 const axios = require("axios");
 import fs from "fs";
 var SibApiV3Sdk = require("sib-api-v3-sdk");
+import { routedTransactionalEmailsApi } from "../services/transactionalEmailProvider";
 import archiver from "archiver";
+
+// Keep existing transactional email templates while routing sends through the
+// provider selected by EMAIL_PROVIDER. Brevo reporting stays Brevo-backed.
+SibApiV3Sdk.TransactionalEmailsApi = routedTransactionalEmailsApi(
+    SibApiV3Sdk.TransactionalEmailsApi
+);
 
 
 type TeamClaimEmail = {
