@@ -203,9 +203,9 @@ const bitcoinyayAbi = [
   },
 ] as const;
 
-const FULL_NODE = process.env.TRON_FULL_NODE;
-const PRIVATE_KEY = process.env.TRON_PRIVATE_KEY;
-const CONTRACT_ADDRESS = process.env.BITCOINYAY_CONTRACT_ADDRESS;
+const FULL_NODE = process.env.TRON_FULL_NODE?.trim();
+const PRIVATE_KEY = process.env.TRON_PRIVATE_KEY?.trim().replace(/^0x/i, "");
+const CONTRACT_ADDRESS = process.env.BITCOINYAY_CONTRACT_ADDRESS?.trim();
 const DECIMALS = Number(process.env.BITCOINYAY_DECIMALS ?? 18);
 const FEE_LIMIT = 100_000_000;
 
@@ -213,10 +213,27 @@ if (!FULL_NODE || !PRIVATE_KEY || !CONTRACT_ADDRESS) {
   throw new Error("Missing TRON configuration for Bitcoinyay admin operations");
 }
 
-const tronWeb = new TronWeb({
-  fullHost: FULL_NODE,
-  privateKey: PRIVATE_KEY,
-});
+if (!/^[0-9a-f]{64}$/i.test(PRIVATE_KEY)) {
+  throw new Error(
+    "Invalid TRON_PRIVATE_KEY: expected a 64-character hexadecimal private key",
+  );
+}
+
+let tronWeb: TronWeb;
+try {
+  tronWeb = new TronWeb({
+    fullHost: FULL_NODE,
+    privateKey: PRIVATE_KEY,
+  });
+} catch {
+  throw new Error(
+    "Invalid TRON_PRIVATE_KEY: provide the private key for the Bitcoinyay admin wallet",
+  );
+}
+
+if (!tronWeb.isAddress(CONTRACT_ADDRESS)) {
+  throw new Error("Invalid BITCOINYAY_CONTRACT_ADDRESS: expected a TRON address");
+}
 
 let contractInstance: any | null = null;
 
